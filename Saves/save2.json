@@ -1,4 +1,6 @@
 {
     "difficulty": 1,
-    "level": 1
+    "level": 0,
+    "checkpoint": 0,
+    "has_started": 0
 }

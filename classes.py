@@ -5,6 +5,7 @@ pygame.init()
 
 screen = pygame.display.set_mode((0,0))
 audio = manage_json("Config/config.json", None, mode="r")['audio']
+platforms = []
 
 class DecoyController:
     def rumble(self, gdgeoo, hfjopse, hhitgh):
@@ -223,6 +224,7 @@ class Player(pygame.sprite.Sprite):
         self.jump_slow = 0
         self.jump_speed = 8
         self.health = 20
+        self.lives = 3
         self.is_alive = True
         self.is_hit_by = []
         self.real_x = self.rect.x
@@ -262,7 +264,7 @@ class Player(pygame.sprite.Sprite):
         self.image = frame
         
         if pygame.time.get_ticks() - self.jump_time > self.jump_delay and not self.jumping:
-            if self.real_y + self.rect.height < floor_level:
+            if any(self.rect.colliderect(platform.rect) for lists in platforms for platform in lists):
                 self.real_y += 5
             else:
                 self.can_jump = True  # Reset jump when on the ground
@@ -462,8 +464,8 @@ class Sword(pygame.sprite.Sprite):
 class Button(pygame.sprite.Sprite):
     def __init__(self, pos, size, text, font, color, hover_color, game_state_occurrence, trigger_effect=None, outline_color=GREY(255), outline_thickness=3):
         super().__init__()
-        self.rect = pygame.Rect(0, 0, *size)
-        self.rect.center = pos
+        self.image = pygame.Surface(size)
+        self.rect = self.image.get_rect(center=pos)
         self.text = text
         self.font = font
         self.trigger_effect = trigger_effect
@@ -518,7 +520,7 @@ lancing_sheith = SwordPiece("Assets/Images/Sword/Sheith/Sheith - Lancing.png", "
 lancing_set = [lancing_blade, lancing_foreblade, lancing_handle, lancing_sheith]
 
 player = Player((WIDTH / 2, HEIGHT / 2))
-sword = Sword(player, old_set)
+sword = Sword(player, lancing_set)
 heart1 = Heart(1)
 heart2 = Heart(2)
 heart3 = Heart(3)

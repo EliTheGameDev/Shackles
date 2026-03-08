@@ -2,14 +2,15 @@ import pygame
 import json
 import sys
 import os
+import tkinter as tk
+from tkinter import filedialog
 
-# Optional file dialog
-try:
-    import tkinter as tk
-    from tkinter import filedialog
-    TK_AVAILABLE = True
-except Exception:
-    TK_AVAILABLE = False
+# 1. INITIALIZE PYGAME FIRST
+pygame.init()
+
+# Ensure the Levels directory exists
+if not os.path.exists("Levels"):
+    os.makedirs("Levels")
 
 # --------------------
 # Config
@@ -22,20 +23,24 @@ FPS = 60
 CATEGORY_BAR_HEIGHT = 40
 HOTBAR_HEIGHT = 72
 
-DEFAULT_SAVE_FILE = "level_data.json"
-
 # Colors
-WORLD_BORDER_COLOR = (255, 0, 0)   # thick red border
-ORIGIN_HIGHLIGHT_COLOR = (255, 0, 0)
+GRID_COLOR = (40, 40, 40)
+UI_BG = (30, 30, 30)
+TEXT_COLOR = (255, 255, 255)
+INPUT_INACTIVE = (60, 60, 60)
+INPUT_ACTIVE = (100, 100, 150)
+
+# 2. SETUP DISPLAY BEFORE LOADING IMAGES
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Shackles - Level Editor")
 
 # --------------------
 # Platform class + registry
 # --------------------
-
 class PlatformType:
     def __init__(self, id, color=None, sprite_path=None):
         self.id = id
-        self.color = color
+        self.color = color if color else (255, 0, 255) # Missing texture fallback
         self.sprite_path = sprite_path
         self.sprite = None
 
@@ -46,377 +51,274 @@ class PlatformType:
         else:
             self.sprite = None
 
-PLATFORMS = {}
+platform_registry = {}
 
-def register_platform(platform: PlatformType):
-    PLATFORMS[platform.id] = platform
+def register_platform(plat):
+    plat.load_resources()
+    platform_registry[plat.id] = plat
 
-def get_platform(id: str) -> PlatformType:
-    return PLATFORMS.get(id, PLATFORMS["Empty"])
+def get_platform(pid):
+    return platform_registry.get(pid, platform_registry.get("Empty"))
 
-def register_all_platforms():
-    register_platform(PlatformType("Empty",  color=(0, 0, 0)))
-    register_platform(PlatformType("Eraser", color=(200, 50, 50)))
+# Register default tools
+register_platform(PlatformType("Empty", color=(0, 0, 0)))
+register_platform(PlatformType("Eraser", color=(255, 100, 100)))
 
-    register_platform(PlatformType("GrassB", sprite_path="Assets/Images/Platforms/Ground-Based Platforms/Base Grass Platform.png"))
-    register_platform(PlatformType("GrassL", sprite_path="Assets/Images/Platforms/Ground-Based Platforms/Left Grass Platform.png"))
-    register_platform(PlatformType("GrassT", sprite_path="Assets/Images/Platforms/Ground-Based Platforms/Top Grass Platform.png"))
-    register_platform(PlatformType("GrassR", sprite_path="Assets/Images/Platforms/Ground-Based Platforms/Right Grass Platform.png"))
+# ==========================================
+# AUTOMATIC PLATFORM GENERATION (18 Total)
+# ==========================================
+platform_types = ["Brick", "Dirt", "Grass"]
+platform_prefixes = ["Base", "Bottom Left", "Bottom Right", "Left", "Right", "Top"]
 
-    register_platform(PlatformType("StoneB", color=(120, 120, 120)))
-    register_platform(PlatformType("StoneL", color=(170, 170, 170)))
-
-    register_platform(PlatformType("DirtB",  color=(139, 69, 19)))
-    register_platform(PlatformType("DirtL",  color=(160, 90, 40)))
-
-# --------------------
-# Categories
-# --------------------
-
-PLATFORM_CATEGORIES = [
-    ("Tools", ["Eraser"]),
-    ("Grass", ["GrassB", "GrassL", "GrassT", "GrassR", "DirtB", "DirtL"]),
-    ("Stone", ["StoneB", "StoneL"]),
-]
-
-CATEGORY_BUTTON_PADDING = 8
-HOTBAR_SLOT_PADDING = 6
+for p_type in platform_types:
+    for prefix in platform_prefixes:
+        plat_name = f"{prefix} {p_type}" 
+        plat_path = f"Assets/Images/Platforms/Ground-Based Platforms/{plat_name} Platform.png"
+        
+        fallback_color = (50 + (len(p_type)*20) % 200, 100, 50 + (len(prefix)*20) % 200)
+        register_platform(PlatformType(plat_name, color=fallback_color, sprite_path=plat_path))
 
 # --------------------
-# Coordinate helpers
+# Helper Functions
 # --------------------
-
 def world_to_screen(wx, wy, cam_x, cam_y):
-    sx = (wx - cam_x) * TILE_SIZE + SCREEN_WIDTH // 2
-    sy = (cam_y - wy) * TILE_SIZE + SCREEN_HEIGHT // 2
+    sx = (wx * TILE_SIZE) - int(cam_x * TILE_SIZE)
+    sy = (wy * TILE_SIZE) - int(cam_y * TILE_SIZE) + CATEGORY_BAR_HEIGHT
     return sx, sy
 
 def screen_to_world(sx, sy, cam_x, cam_y):
-    wx = (sx - SCREEN_WIDTH // 2) // TILE_SIZE + cam_x
-    wy = cam_y - (sy - SCREEN_HEIGHT // 2) // TILE_SIZE
+    wx = (sx + int(cam_x * TILE_SIZE)) // TILE_SIZE
+    wy = (sy - CATEGORY_BAR_HEIGHT + int(cam_y * TILE_SIZE)) // TILE_SIZE
     return wx, wy
 
-def get_visible_bounds(cam_x, cam_y):
-    tiles_x = SCREEN_WIDTH // TILE_SIZE + 2
-    tiles_y = SCREEN_HEIGHT // TILE_SIZE + 2
-    min_x = cam_x - tiles_x // 2
-    max_x = cam_x + tiles_x // 2
-    min_y = cam_y - tiles_y // 2
-    max_y = cam_y + tiles_y // 2
-    return min_x, max_x, min_y, max_y
-
-# --------------------
-# Save / Load
-# --------------------
-
-def export_level(blocks):
-    if not blocks:
-        return []
-
-    xs = [x for (x, _) in blocks.keys()]
-    ys = [y for (_, y) in blocks.keys()]
-
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-
-    width = max_x - min_x + 1
-    height = max_y - min_y + 1
-
-    data = []
-    for row_index in range(height):
-        wy = min_y + row_index
-        row = []
-        for col_index in range(width):
-            wx = min_x + col_index
-            row.append(blocks.get((wx, wy), "Empty"))
-        data.append(row)
-
-    return data
-
-def import_level(data):
-    blocks = {}
-    if not data:
-        return blocks
-
-    for row_index, row in enumerate(data):
-        wy = row_index
-        for col_index, pid in enumerate(row):
-            wx = col_index
-            if pid not in ("Empty", "Eraser"):
-                blocks[(wx, wy)] = pid
-
-    return blocks
-
-def choose_save_file(initial_name):
-    if not TK_AVAILABLE:
-        return DEFAULT_SAVE_FILE
+def save_level_dialog(blocks, map_w, map_h):
+    # Hide the main tkinter window, we only want the dialog box
     root = tk.Tk()
-    root.withdraw()
-    filename = filedialog.asksaveasfilename(
-        title="Save level as",
+    root.withdraw() 
+    filepath = filedialog.asksaveasfilename(
+        initialdir=os.path.join(os.getcwd(), "Levels"),
+        title="Save Level As...",
         defaultextension=".json",
-        initialfile=initial_name + ".json",
         filetypes=[("JSON files", "*.json")]
     )
     root.destroy()
-    return filename or DEFAULT_SAVE_FILE
 
-def choose_load_file():
-    if not TK_AVAILABLE:
-        return DEFAULT_SAVE_FILE
+    if not filepath:
+        print("Save cancelled.")
+        return
+
+    # Create dictionary with EVERY single coordinate
+    all_blocks = {}
+    for y in range(map_h):
+        for x in range(map_w):
+            # If a block exists there, save it. Otherwise, save "Empty"
+            all_blocks[f"{x},{y}"] = blocks.get((x, y), "Empty")
+
+    save_data = {
+        "metadata": {"width": map_w, "height": map_h},
+        "blocks": all_blocks
+    }
+    with open(filepath, "w") as f:
+        json.dump(save_data, f, indent=4)
+    print(f"Level saved to {filepath}")
+
+def load_level_dialog():
     root = tk.Tk()
     root.withdraw()
-    filename = filedialog.askopenfilename(
-        title="Open level",
+    filepath = filedialog.askopenfilename(
+        initialdir=os.path.join(os.getcwd(), "Levels"),
+        title="Load Level JSON",
         filetypes=[("JSON files", "*.json")]
     )
     root.destroy()
-    return filename or DEFAULT_SAVE_FILE
-
-def save_level(blocks, level_name, current_path):
-    data = {"name": level_name, "tiles": export_level(blocks)}
-    save_path = current_path or choose_save_file(level_name)
-    with open(save_path, "w") as f:
-        json.dump(data, f)
-    return save_path
-
-def load_level(current_path):
-    load_path = current_path or choose_load_file()
-    try:
-        with open(load_path, "r") as f:
-            data = json.load(f)
-        return import_level(data["tiles"]), data["name"], load_path
-    except:
-        return {}, "Untitled", None
-
-# --------------------
-# UI drawing
-# --------------------
-
-def draw_category_bar(screen, font, selected_category_index):
-    pygame.draw.rect(screen, (30, 30, 30), (0, 0, SCREEN_WIDTH, CATEGORY_BAR_HEIGHT))
-    x = CATEGORY_BUTTON_PADDING
-    for i, (cat_name, _) in enumerate(PLATFORM_CATEGORIES):
-        surf = font.render(cat_name, True, (255, 255, 255))
-        w, h = surf.get_size()
-        rect = pygame.Rect(x, 4, w + 16, CATEGORY_BAR_HEIGHT - 8)
-        pygame.draw.rect(screen, (80, 80, 160) if i == selected_category_index else (60, 60, 60), rect)
-        screen.blit(surf, (rect.x + 8, rect.y + (rect.height - h) // 2))
-        x += rect.width + CATEGORY_BUTTON_PADDING
-
-def get_category_at_pos(pos, font):
-    x, y = pos
-    if y > CATEGORY_BAR_HEIGHT:
-        return None
-    cx = CATEGORY_BUTTON_PADDING
-    for i, (cat_name, _) in enumerate(PLATFORM_CATEGORIES):
-        surf = font.render(cat_name, True, (255, 255, 255))
-        w, _ = surf.get_size()
-        rect = pygame.Rect(cx, 4, w + 16, CATEGORY_BAR_HEIGHT - 8)
-        if rect.collidepoint(x, y):
-            return i
-        cx += rect.width + CATEGORY_BUTTON_PADDING
-    return None
-
-def draw_hotbar(screen, font, selected_platform_id, selected_category_index):
-    y = SCREEN_HEIGHT - HOTBAR_HEIGHT
-    pygame.draw.rect(screen, (30, 30, 30), (0, y, SCREEN_WIDTH, HOTBAR_HEIGHT))
-
-    _, ids = PLATFORM_CATEGORIES[selected_category_index]
-    slot_width = 64
-    total_width = len(ids) * (slot_width + HOTBAR_SLOT_PADDING) + HOTBAR_SLOT_PADDING
-    start_x = (SCREEN_WIDTH - total_width) // 2 + HOTBAR_SLOT_PADDING
-
-    for idx, pid in enumerate(ids):
-        rect = pygame.Rect(start_x + idx * (slot_width + HOTBAR_SLOT_PADDING), y + 8, slot_width, HOTBAR_HEIGHT - 16)
-        pygame.draw.rect(screen, (200, 200, 80) if pid == selected_platform_id else (80, 80, 80), rect, border_radius=6)
-
-        inner = rect.inflate(-16, -16)
-        platform = get_platform(pid)
-
-        if pid == "Eraser":
-            pygame.draw.rect(screen, (50, 0, 0), inner)
-            pygame.draw.line(screen, (255, 255, 255), inner.topleft, inner.bottomright, 3)
-            pygame.draw.line(screen, (255, 255, 255), inner.topright, inner.bottomleft, 3)
-        elif platform.color:
-            pygame.draw.rect(screen, platform.color, inner)
-
-        surf = font.render(pid, True, (255, 255, 255))
-        screen.blit(surf, (rect.centerx - surf.get_width() // 2, rect.bottom - 14))
-
-def get_hotbar_platform_at_pos(pos, selected_category_index):
-    x, y = pos
-    if y < SCREEN_HEIGHT - HOTBAR_HEIGHT:
-        return None
-
-    _, ids = PLATFORM_CATEGORIES[selected_category_index]
-    slot_width = 64
-    total_width = len(ids) * (slot_width + HOTBAR_SLOT_PADDING) + HOTBAR_SLOT_PADDING
-    start_x = (SCREEN_WIDTH - total_width) // 2 + HOTBAR_SLOT_PADDING
-
-    for idx, pid in enumerate(ids):
-        rect = pygame.Rect(start_x + idx * (slot_width + HOTBAR_SLOT_PADDING),
-                           SCREEN_HEIGHT - HOTBAR_HEIGHT + 8,
-                           slot_width, HOTBAR_HEIGHT - 16)
-        if rect.collidepoint(x, y):
-            return pid
-    return None
-
-def draw_level_name(screen, font, name, editing):
-    text = f"Level: {name}" + (" (editing)" if editing else "")
-    screen.blit(font.render(text, True, (255, 255, 255)), (10, CATEGORY_BAR_HEIGHT + 8))
-
-# --------------------
-# World border
-# --------------------
-
-def draw_world_axes(screen, cam_x_int, cam_y_int):
-    min_x, max_x, min_y, max_y = get_visible_bounds(cam_x_int, cam_y_int)
-
-    if min_x <= 0 <= max_x:
-        sx, _ = world_to_screen(0, 0, cam_x_int, cam_y_int)
-        pygame.draw.line(screen, WORLD_BORDER_COLOR, (sx, CATEGORY_BAR_HEIGHT), (sx, SCREEN_HEIGHT - HOTBAR_HEIGHT), 6)
-
-    if min_y <= 0 <= max_y:
-        _, sy = world_to_screen(0, 0, cam_x_int, cam_y_int)
-        pygame.draw.line(screen, WORLD_BORDER_COLOR, (0, sy), (SCREEN_WIDTH, sy), 6)
-
-    if min_x <= 0 <= max_x and min_y <= 0 <= max_y:
-        sx, sy = world_to_screen(0, 0, cam_x_int, cam_y_int)
-        pygame.draw.rect(screen, ORIGIN_HIGHLIGHT_COLOR, pygame.Rect(sx, sy, TILE_SIZE, TILE_SIZE), 4)
-
-# --------------------
-# Main
-# --------------------
-
-def main():
-    pygame.init()
-    register_all_platforms()
-    for p in PLATFORMS.values():
-        p.load_resources()
-
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("consolas", 16)
 
     blocks = {}
-    cam_x, cam_y = 0, 0
+    map_w, map_h = 50, 50 # Defaults
+    
+    if filepath and os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            save_data = json.load(f)
+            
+            if "metadata" in save_data:
+                map_w = save_data["metadata"].get("width", 50)
+                map_h = save_data["metadata"].get("height", 50)
+                block_data = save_data["blocks"]
+            else:
+                block_data = save_data
+            
+            for key, pid in block_data.items():
+                # We only need to load non-empty blocks into our active dictionary to save memory
+                if pid != "Empty":
+                    x, y = map(int, key.split(","))
+                    blocks[(x, y)] = pid
+        print(f"Level loaded from {filepath}")
+    else:
+        print("No file selected. Starting fresh.")
+        
+    return blocks, map_w, map_h
 
-    level_name = "Untitled"
-    level_file_path = None
+# --------------------
+# Main Loop
+# --------------------
+def main():
+    clock = pygame.time.Clock()
+    ui_font = pygame.font.SysFont(None, 24)
 
-    selected_category = 1
-    current_platform = PLATFORM_CATEGORIES[selected_category][1][0]
-    editing_name = False
+    # Prompt user to load a file on startup
+    blocks, map_width, map_height = load_level_dialog()
+    
+    available_platforms = [p for p in platform_registry.keys() if p not in ["Empty", "Eraser"]]
+    current_selection_idx = 0 
+
+    # Calculate view size in tiles
+    view_w_tiles = SCREEN_WIDTH / TILE_SIZE
+    view_h_tiles = (SCREEN_HEIGHT - CATEGORY_BAR_HEIGHT - HOTBAR_HEIGHT) / TILE_SIZE
+
+    # Start camera at bottom-left of the map
+    cam_x = 0.0
+    cam_y = max(0.0, map_height - view_h_tiles)
+    speed = 0.5
+    
+    # Text Input UI setup
+    input_w_rect = pygame.Rect(100, 7, 50, 26)
+    input_h_rect = pygame.Rect(230, 7, 50, 26)
+    active_w = False
+    active_h = False
+    text_w = str(map_width)
+    text_h = str(map_height)
 
     running = True
     while running:
-        dt = clock.tick(FPS) / 1000
-
+        # --- Events ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-
-            elif event.type == pygame.KEYDOWN:
-                if editing_name:
-                    if event.key == pygame.K_RETURN:
-                        editing_name = False
-                    elif event.key == pygame.K_BACKSPACE:
-                        level_name = level_name[:-1]
-                    elif event.key == pygame.K_ESCAPE:
-                        editing_name = False
-                    else:
-                        if event.unicode.isprintable():
-                            level_name += event.unicode
+            
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if input_w_rect.collidepoint(event.pos):
+                    active_w = True
+                    active_h = False
+                elif input_h_rect.collidepoint(event.pos):
+                    active_h = True
+                    active_w = False
                 else:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                    if event.key == pygame.K_F2:
-                        editing_name = True
+                    active_w = False
+                    active_h = False
+                    if text_w.isdigit() and int(text_w) > 0: map_width = int(text_w)
+                    if text_h.isdigit() and int(text_h) > 0: map_height = int(text_h)
+
+            if event.type == pygame.KEYDOWN:
+                if active_w:
+                    if event.key == pygame.K_RETURN:
+                        active_w = False
+                        if text_w.isdigit() and int(text_w) > 0: map_width = int(text_w)
+                    elif event.key == pygame.K_BACKSPACE:
+                        text_w = text_w[:-1]
+                    elif event.unicode.isdigit():
+                        text_w += event.unicode
+                elif active_h:
+                    if event.key == pygame.K_RETURN:
+                        active_h = False
+                        if text_h.isdigit() and int(text_h) > 0: map_height = int(text_h)
+                    elif event.key == pygame.K_BACKSPACE:
+                        text_h = text_h[:-1]
+                    elif event.unicode.isdigit():
+                        text_h += event.unicode
+                else:
+                    # Save Level Trigger
+                    if event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
+                        # Release keys so we don't get stuck holding Ctrl after the window closes
+                        pygame.event.clear() 
+                        save_level_dialog(blocks, map_width, map_height)
+                        
                     if event.key == pygame.K_e:
-                        selected_category = 0
-                        current_platform = "Eraser"
-                    if event.key == pygame.K_s:
-                        level_file_path = save_level(blocks, level_name, level_file_path)
-                    if event.key == pygame.K_l:
-                        blocks, level_name, level_file_path = load_level(level_file_path)
+                        current_selection_idx = (current_selection_idx + 1) % len(available_platforms)
+                    if event.key == pygame.K_q:
+                        current_selection_idx = (current_selection_idx - 1) % len(available_platforms)
 
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = event.pos
-
-                cat = get_category_at_pos((mx, my), font)
-                if cat is not None:
-                    selected_category = cat
-                    current_platform = PLATFORM_CATEGORIES[cat][1][0]
-                    continue
-
-                hot = get_hotbar_platform_at_pos((mx, my), selected_category)
-                if hot:
-                    current_platform = hot
-                    continue
-
-                if CATEGORY_BAR_HEIGHT < my < SCREEN_HEIGHT - HOTBAR_HEIGHT:
-                    wx, wy = screen_to_world(mx, my, cam_x, cam_y)
-                    wx, wy = int(wx), int(wy)
-
-                    if wx < 0 or wy < 0:
-                        continue
-
-                    if event.button == 1:
-                        if current_platform in ("Eraser", "Empty"):
-                            blocks.pop((wx, wy), None)
-                        else:
-                            blocks[(wx, wy)] = current_platform
-
-                    elif event.button == 3:
-                        blocks.pop((wx, wy), None)
-
+        # --- Input for Camera ---
         keys = pygame.key.get_pressed()
-        if not editing_name:
-            speed = 10 * dt
-            if keys[pygame.K_LEFT]:
+        if not (active_w or active_h):
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 cam_x -= speed
-            if keys[pygame.K_RIGHT]:
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
                 cam_x += speed
-            if keys[pygame.K_UP]:
-                cam_y += speed
-            if keys[pygame.K_DOWN]:
+            if keys[pygame.K_UP] or keys[pygame.K_w]:
                 cam_y -= speed
+            if keys[pygame.K_DOWN] or keys[pygame.K_s] and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
+                cam_y += speed
 
-        cam_x = max(cam_x, -1)
-        cam_y = max(cam_y, -1)
+        # Clamp camera
+        max_cam_x = max(0.0, map_width - view_w_tiles)
+        max_cam_y = max(0.0, map_height - view_h_tiles)
+        cam_x = max(0.0, min(cam_x, max_cam_x))
+        cam_y = max(0.0, min(cam_y, max_cam_y))
 
-        cam_x_int = int(round(cam_x))
-        cam_y_int = int(round(cam_y))
+        # --- Placing / Erasing ---
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        if CATEGORY_BAR_HEIGHT < mouse_y < SCREEN_HEIGHT - HOTBAR_HEIGHT:
+            wx, wy = screen_to_world(mouse_x, mouse_y, cam_x, cam_y)
+            mouse_btns = pygame.mouse.get_pressed()
+            
+            if 0 <= wx < map_width and 0 <= wy < map_height:
+                if mouse_btns[0]:
+                    blocks[(wx, wy)] = available_platforms[current_selection_idx]
+                if mouse_btns[2]:
+                    if (wx, wy) in blocks:
+                        del blocks[(wx, wy)]
 
+        # --- Drawing ---
         screen.fill((0, 0, 0))
 
-        min_x, max_x, min_y, max_y = get_visible_bounds(cam_x_int, cam_y_int)
-        for wx in range(max(min_x, 0), max_x + 1):
-            for wy in range(max(min_y, 0), max_y + 1):
-                sx, sy = world_to_screen(wx, wy, cam_x_int, cam_y_int)
+        min_x = max(0, int(cam_x))
+        max_x = min(map_width - 1, int(cam_x) + int(view_w_tiles) + 1)
+        min_y = max(0, int(cam_y))
+        max_y = min(map_height - 1, int(cam_y) + int(view_h_tiles) + 1)
+
+        for wx in range(min_x, max_x + 1):
+            for wy in range(min_y, max_y + 1):
+                sx, sy = world_to_screen(wx, wy, cam_x, cam_y)
                 rect = pygame.Rect(sx, sy, TILE_SIZE, TILE_SIZE)
 
                 if rect.bottom < CATEGORY_BAR_HEIGHT or rect.top > SCREEN_HEIGHT - HOTBAR_HEIGHT:
                     continue
 
+                pygame.draw.rect(screen, GRID_COLOR, rect, 1)
+
                 pid = blocks.get((wx, wy), "Empty")
-                plat = get_platform(pid)
-
-                if plat.sprite:
-                    screen.blit(plat.sprite, rect)
-                else:
-                    if pid not in ("Empty", "Eraser"):
-                        pygame.draw.rect(screen, plat.color, rect)
+                if pid != "Empty":
+                    plat = get_platform(pid)
+                    if plat.sprite:
+                        screen.blit(plat.sprite, rect)
                     else:
-                        pygame.draw.rect(screen, (40, 40, 40), rect, 1)
+                        pygame.draw.rect(screen, plat.color, rect)
 
-        draw_world_axes(screen, cam_x_int, cam_y_int)
-        draw_category_bar(screen, font, selected_category)
-        draw_hotbar(screen, font, current_platform, selected_category)
-        draw_level_name(screen, font, level_name, editing_name)
+        # Draw UI
+        pygame.draw.rect(screen, UI_BG, (0, 0, SCREEN_WIDTH, CATEGORY_BAR_HEIGHT))
+        pygame.draw.rect(screen, UI_BG, (0, SCREEN_HEIGHT - HOTBAR_HEIGHT, SCREEN_WIDTH, HOTBAR_HEIGHT))
+        
+        selected_text = ui_font.render(f"Selected: {available_platforms[current_selection_idx]} (Q/E to switch)", True, TEXT_COLOR)
+        screen.blit(selected_text, (20, SCREEN_HEIGHT - HOTBAR_HEIGHT + 25))
+        
+        lbl_w = ui_font.render("Width:", True, TEXT_COLOR)
+        screen.blit(lbl_w, (40, 12))
+        pygame.draw.rect(screen, INPUT_ACTIVE if active_w else INPUT_INACTIVE, input_w_rect)
+        pygame.draw.rect(screen, TEXT_COLOR, input_w_rect, 2)
+        txt_w_surf = ui_font.render(text_w, True, TEXT_COLOR)
+        screen.blit(txt_w_surf, (input_w_rect.x + 5, input_w_rect.y + 5))
+
+        lbl_h = ui_font.render("Height:", True, TEXT_COLOR)
+        screen.blit(lbl_h, (165, 12))
+        pygame.draw.rect(screen, INPUT_ACTIVE if active_h else INPUT_INACTIVE, input_h_rect)
+        pygame.draw.rect(screen, TEXT_COLOR, input_h_rect, 2)
+        txt_h_surf = ui_font.render(text_h, True, TEXT_COLOR)
+        screen.blit(txt_h_surf, (input_h_rect.x + 5, input_h_rect.y + 5))
+
+        info_text = ui_font.render("WASD/Arrows: Move | L-Click: Place | R-Click: Erase | Ctrl+S: Save", True, (150, 150, 150))
+        screen.blit(info_text, (350, 12))
 
         pygame.display.flip()
+        clock.tick(FPS)
 
     pygame.quit()
     sys.exit()
