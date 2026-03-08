@@ -1,11 +1,11 @@
 import pygame, random, math
 from commands import *
 from constants import *
+from platforms import *
 pygame.init()
 
 screen = pygame.display.set_mode((0,0))
 audio = manage_json("Config/config.json", None, mode="r")['audio']
-platforms = []
 
 class DecoyController:
     def rumble(self, gdgeoo, hfjopse, hhitgh):
@@ -20,45 +20,6 @@ if pygame.joystick.get_count() > 0:
     print(f"Controller {joystick.get_name()} connected!")
 else:
     joystick = DecoyController()
-
-class VisionBasedDetectionBox(pygame.sprite.Sprite):
-    def __init__(self, mount, size):
-        super().__init__()
-        self.image = pygame.Surface(size)
-        self.rect = self.image.get_rect()
-        
-        self.mount = mount
-    
-    def update(self):
-        if self.mount.direction == 1:
-            self.rect.midleft = self.mount.rect.midright
-        elif self.mount.direction == -1:
-            self.rect.midright = self.mount.rect.midleft
-        self.image.fill(YELLOW)
-        self.image.set_alpha(DETECTION_BOX_OPACITY)
-        
-        if self.rect.colliderect(player):
-            self.mount.player_in_range = True
-        else:
-            self.mount.player_in_range = False
-
-class DetectionBox(pygame.sprite.Sprite):
-    def __init__(self, mount, reach):
-        super().__init__()
-        self.image = pygame.Surface((reach, reach))
-        self.rect = self.image.get_rect()
-        
-        self.mount = mount
-    
-    def update(self):
-        self.rect.center = self.mount.rect.center
-        self.image.fill(BLUE)
-        self.image.set_alpha(DETECTION_BOX_OPACITY)
-        
-        if self.rect.colliderect(player):
-            self.mount.player_is_found = True
-        else:
-            self.mount.player_is_found = False
 
 # Base Model For Enemies
 class Enemy(pygame.sprite.Sprite):
@@ -75,6 +36,8 @@ class Enemy(pygame.sprite.Sprite):
         self.movement_speed = movement_speed
         self.direction = 1
         self.attacking = False
+        self.detection_range = 192
+        self.vision_range = (60, 50)
         self.player_in_range = False
         self.player_is_found = False
         self.direction_time = 0
@@ -85,7 +48,9 @@ class Enemy(pygame.sprite.Sprite):
         self.real_y = self.rect.y
         
     def update(self):
-        # pathfinding
+        # base pathfinding
+        self.player_is_found = player.real_x > self.real_x - self.detection_range and player.real_x < self.real_x + self.detection_range
+        self.player_in_range = player.real_x > self.real_x - self.vision_range[0] and player.real_x < self.real_x + self.vision_range[0] and player.real_y > self.real_y - self.vision_range[1] and player.real_y < self.real_y + self.vision_range[1]
         if not self.player_is_found and not self.player_in_range:
             if self.direction_time == 0:
                 self.direction *= -1
@@ -146,17 +111,22 @@ class Swordsman(pygame.sprite.Sprite):
         self.movement_speed = 2.5
         self.direction = 1
         self.attacking = False
-        self.player_in_range = False
-        self.player_is_found = False
         self.direction_time = 0
         self.is_hit_by = []
         self.old_direction = 1
+        self.detection_range = 192
+        self.vision_range = (60, 50)
+        self.player_in_range = False
+        self.player_is_found = False
+        self.hit_platforms = 0
         
         self.real_x = self.rect.x
         self.real_y = self.rect.y
         
     def update(self):
         # pathfinding
+        self.player_is_found = player.real_x > self.real_x - self.detection_range and player.real_x < self.real_x + self.detection_range
+        self.player_in_range = player.real_x > self.real_x - self.vision_range[0] and player.real_x < self.real_x + self.vision_range[0] and player.real_y > self.real_y - self.vision_range[1] and player.real_y < self.real_y + self.vision_range[1]
         if not self.player_is_found and not self.player_in_range:
             if self.direction_time == 0:
                 self.direction *= -1
@@ -175,8 +145,15 @@ class Swordsman(pygame.sprite.Sprite):
             else:
                 self.direction = -1
                 
-        if self.real_y + self.rect.height < floor_level:
-            self.real_y += 5
+        self.hit_platforms = pygame.sprite.spritecollide(self, plat_group, False)
+
+        if self.hit_platforms:
+            platform = self.hit_platforms[0]
+            
+            if not self.rect.bottom <= platform.rect.top:
+                self.real_y = platform.rect.top - self.rect.height
+            else:
+                self.real_y += 5
         
         touching = self.rect.colliderect(sword.rect)
         
@@ -218,26 +195,37 @@ class Player(pygame.sprite.Sprite):
         self.direction = 1
         self.jump_time = 0
         self.jump_delay = 200
-        self.jump_height = 40
+        self.jump_height = 50
         self.current_jump_height = 0
         self.jumping = False
         self.jump_slow = 0
         self.jump_speed = 8
-        self.health = 20
+        self.health = self.max_health = 20
         self.lives = 3
         self.is_alive = True
         self.is_hit_by = []
         self.real_x = self.rect.x
         self.real_y = self.rect.y
+        self.hit_platforms = 0
+        self.climb_max = 32
+        self.move_speed = 5
 
     def update(self):
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a] or joystick.get_axis(0) < -0.2:
-            self.real_x -= 4
+            self.real_x -= self.move_speed
             self.direction = -1
+            self.rect.x = self.real_x
+            if pygame.sprite.spritecollide(self, plat_group, False):
+                self.real_x += self.move_speed
+        
         if keys[pygame.K_d] or joystick.get_axis(0) > 0.2:
-            self.real_x += 4
+            self.real_x += self.move_speed
             self.direction = 1
+            self.rect.x = self.real_x
+            if pygame.sprite.spritecollide(self, plat_group, False):
+                self.real_x -= self.move_speed
+        
         if (keys[pygame.K_SPACE] or joystick.get_button(1)) and self.can_jump and not self.jumping:
             self.jumping = True
             self.can_jump = False
@@ -263,11 +251,24 @@ class Player(pygame.sprite.Sprite):
             frame = pygame.transform.flip(frame, True, False)
         self.image = frame
         
-        if pygame.time.get_ticks() - self.jump_time > self.jump_delay and not self.jumping:
-            if any(self.rect.colliderect(platform.rect) for lists in platforms for platform in lists):
-                self.real_y += 5
+        self.rect.x, self.rect.y = self.real_x, self.real_y
+
+        self.hit_platforms = pygame.sprite.spritecollide(self, plat_group, False)
+
+        if self.hit_platforms:
+            platform = self.hit_platforms[0]
+            
+            if not self.jumping and self.rect.bottom <= platform.rect.top + self.climb_max:
+                self.can_jump = True
+                self.real_y = platform.rect.top - self.rect.height
+                self.rect.y = self.real_y
             else:
-                self.can_jump = True  # Reset jump when on the ground
+                self.real_y += 5
+                self.can_jump = False
+        
+        elif not self.jumping:
+            self.real_y += 5
+            self.can_jump = False
         
         touching = False
         for x in enemy_render_group:
@@ -277,19 +278,17 @@ class Player(pygame.sprite.Sprite):
 
                 if touching:
                     if x not in self.is_hit_by:
-                            # First time touching this sword
                         self.health -= x.damage
                         joystick.rumble(5, 10, 1)
                         if self.health <= 0:
-                            running = False
+                            self.lives -= 1
+                            self.health = self.max_health
+                        if self.lives <= 0:
+                            lose_game(game_save)
                         self.is_hit_by.append(x)
                 else:
-                    # Not touching anymore → reset
                     if x in self.is_hit_by:
                         self.is_hit_by.remove(x)
-                        
-        self.rect.x = self.real_x - camera_x
-        self.rect.y = self.real_y - camera_y
 
 class SwordPiece(pygame.sprite.Sprite):
     def __init__(self, sprite, piece, category, swn_spd_mod, max_swn_mod, reach_mod, dmg_mod):
@@ -459,7 +458,7 @@ class Sword(pygame.sprite.Sprite):
             self.real_y = self.player.real_y + 20 - self.selfY
 
         self.rect.x = self.real_x - camera_x
-        self.rect.y = self.real_y - camera_y
+        self.rect.y = (self.real_y - camera_y)//8 * 8
 
 class Button(pygame.sprite.Sprite):
     def __init__(self, pos, size, text, font, color, hover_color, game_state_occurrence, trigger_effect=None, outline_color=GREY(255), outline_thickness=3):
@@ -506,6 +505,15 @@ class Heart(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = 64 * (WIDTH // 64 + heart_pos - 4)
         self.rect.y = WIDTH//96
+        self.heart_pos = heart_pos
+    def update(self):
+        if player.lives >= 4 - self.heart_pos:
+            if player.health < player.max_health // 2 and player.lives == 4 - self.heart_pos:
+                self.image = pygame.image.load("Assets/UI & GUI/HeartHalf.png").convert_alpha()
+            else:
+                self.image = pygame.image.load("Assets/UI & GUI/HeartFull.png").convert_alpha()
+        else:
+            self.image = pygame.image.load("Assets/UI & GUI/HeartEmpty.png").convert_alpha()
 
 old_handle = SwordPiece("Assets/Images/Sword/Handle/Handle - Old.png", "Handle", "Old", 1, 1, 1, 1)
 old_blade = SwordPiece("Assets/Images/Sword/Blade/Blade - Old.png", "Blade", "Old", 1, 1, 1, 1)
@@ -519,7 +527,9 @@ lancing_foreblade = SwordPiece("Assets/Images/Sword/Foreblade/Foreblade - Lancin
 lancing_sheith = SwordPiece("Assets/Images/Sword/Sheith/Sheith - Lancing.png", "Sheith", "Lancing", 1, 1, 1, 1)
 lancing_set = [lancing_blade, lancing_foreblade, lancing_handle, lancing_sheith]
 
-player = Player((WIDTH / 2, HEIGHT / 2))
+origin_point = (WIDTH / 2, 1600)
+
+player = Player(origin_point)
 sword = Sword(player, lancing_set)
 heart1 = Heart(1)
 heart2 = Heart(2)

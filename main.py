@@ -12,7 +12,6 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Shackles")
 clock = pygame.time.Clock()
-game_state = game_states[0]
 
 # Config
 running = True
@@ -27,33 +26,39 @@ class Effect:
         self.target = target
         self.severity = severity
 
-# --- PLATFORMS --- #
-platforms = []
-
 # --- MACROS --- #
-def state_switcher(state_index):
-    global game_state
-    game_state = game_states[state_index]
-
-def create_level(level):
-    global platforms
-    plat_list_val = -1
-    for plat_list in fetch_level_data(level):
-        platforms.append([])
-        plat_list_val += 1
-        plat_val = -1
-        for plat in plat_list:
-            plat_val += 1
-            if plat != 'Empty':
-                platforms[plat_list_val].append(Platform((plat_list_val*32, plat_val*32), f"Assets/Images/Platforms/Ground-Based Platforms/{plat} Platform.png"))
 
 def load_save_file(save):
+    global game_save
+    game_save = save['save']
     state_switcher(2)
     create_level(save['level'])
+    plat_to_group()
 
+def save_and_quit():
+    config = {
+        'debug': debug,
+        'audio': audio
+    }
+    manage_json("Config/config.json", config)
+    state_switcher(0)
+
+def att_spawn_enemy(pos):
+    if random.uniform(0, 1000) < 0.01:
+        new_foe = Swordsman(pos, False)
+        new_foe_sword = Sword(new_foe, old_set)
+        new_foe.weapon = new_foe_sword
+        enemy_render_group.add(new_foe, new_foe_sword)
+
+# --------------- #
 # --- BUTTONS --- #
-play_button = Button((WIDTH//2, HEIGHT//2), (WIDTH//4, HEIGHT//8), "PLAY GAME", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Title Screen", trigger_effect=lambda: state_switcher(1))
+# --------------- #
 
+# Title Screen
+play_button = Button((WIDTH//2, HEIGHT//2), (WIDTH//4, HEIGHT//8), "PLAY GAME", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Title Screen", trigger_effect=lambda: state_switcher(1))
+exit_button = Button((WIDTH//2, HEIGHT//4*3), (WIDTH//4, HEIGHT//8), "EXIT GAME", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Title Screen", trigger_effect=lambda: pygame.quit())
+
+# Save Selection
 if bool(manage_json("Saves/save1.json", None, mode="r")['has_started']):
     save_button_1 = Button((WIDTH//2, HEIGHT//5 * 2), (WIDTH//4, HEIGHT//8), f"SAVE 1 - Lv.{manage_json('Saves/save1.json', None, mode='r')['level']}", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Saves", trigger_effect=lambda: load_save_file(manage_json("Saves/save1.json", None, mode="r")))
 else:
@@ -68,107 +73,159 @@ else:
     save_button_3 = Button((WIDTH//2, HEIGHT//5 * 4), (WIDTH//4, HEIGHT//8), "SAVE 3", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Saves", trigger_effect=lambda: state_switcher(2))
 save_buttons = [save_button_1, save_button_2, save_button_3]
 
+# Pause Menu
+resume_button = Button((WIDTH//2, HEIGHT//8*3), (WIDTH//4, HEIGHT//8), "Resume Game", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Pause", trigger_effect=lambda: state_switcher(2))
+quit_button = Button((WIDTH//2, HEIGHT//8*7), (WIDTH//4, HEIGHT//8), "Save and Quit", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Pause", trigger_effect=lambda: save_and_quit())
+
+# Game Over
+main_menu_button = Button((WIDTH//2, HEIGHT//4*3), (WIDTH//2, HEIGHT//8), "Go Back to Main Menu", pygame.font.Font("Assets/Fonts/Basic Font/NimbusRomNo9L-Reg.otf", 64), (0, 0, 0), (25, 25, 25), "Game Over", trigger_effect=lambda: state_switcher(0))
+
 # ---------------- #
 # --- MAINLOOP --- #
 # ---------------- #
 
-while running and game_state == "Title Screen":
-    for event in pygame.event.get():
-        if event.type ==pygame.QUIT:
-            running = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
+while running:
+    if GameState.current == "Title Screen":
+        try:
+            for event in pygame.event.get():
+                if event.type ==pygame.QUIT:
+                    running = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                play_button.check_button_click(event, GameState.current)
+                exit_button.check_button_click(event, GameState.current)
+        
+            screen.fill((0, 0, 0))
+    
+            title = title_font.render("SHACKLES", True, GREY(255))
+            screen.blit(title, (WIDTH//2 - title.get_width()//2, 100))
+    
+            play_button.draw(screen, GameState.current)
+            play_button.update()
+            exit_button.draw(screen, GameState.current)
+            exit_button.update()
+    
+            clock.tick(30)
+            pygame.display.flip()
+        except pygame.error:
+            pass
+
+    if GameState.current == "Saves":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 running = False
-        play_button.check_button_click(event, game_state)
-    
-    screen.fill((0, 0, 0))
-    
-    title = title_font.render("SHACKLES", True, GREY(255))
-    screen.blit(title, (225, 100))
-    
-    play_button.draw(screen, game_state)
-    
-    clock.tick(30)
-    pygame.display.flip()
-while running and game_state == "Saves":
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+            save_button_1.check_button_click(event, GameState.current)
+            save_button_2.check_button_click(event, GameState.current)
+            save_button_3.check_button_click(event, GameState.current)
+        screen.fill((0, 0, 0))
+        for button in save_buttons:
+            button.draw(screen, GameState.current)
+            button.update()
+
+        clock.tick(30)
+        pygame.display.flip()
+
+    if GameState.current == "Pause":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 running = False
-        save_button_1.check_button_click(event, game_state)
-        save_button_2.check_button_click(event, game_state)
-        save_button_3.check_button_click(event, game_state)
-    screen.fill((0, 0, 0))
-    for button in save_buttons:
-        button.draw(screen, game_state)
-        button.update()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+            resume_button.check_button_click(event, GameState.current)
+            quit_button.check_button_click(event, GameState.current)
+    
+        screen.fill(GREY(15))
 
-    clock.tick(30)
-    pygame.display.flip()
+        resume_button.draw(screen, GameState.current)
+        resume_button.update()
+        quit_button.draw(screen, GameState.current)
+        quit_button.update()
 
-while running and game_state == "Game":
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
+        pause_text = title_font.render("PAUSED", True, GREY(255))
+        screen.blit(pause_text, (WIDTH//2 - pause_text.get_width()//2, HEIGHT//64*3))
+
+        clock.tick(30)
+        pygame.display.flip()
+    
+    if GameState.current == "Game Over":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 running = False
-            if event.key == pygame.K_TAB:
-                debug = not debug
-        if event.type == pygame.JOYBUTTONDOWN:
-            if joystick.get_button(2):
-                debug = not debug
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+        
+        screen.fill((0, 0, 0))
 
-    screen.fill(GREY(0))
+        game_over_text = title_font.render("GAME OVER", True, RED)
+        screen.blit(game_over_text, (WIDTH//2 - game_over_text.get_width()//2, HEIGHT//2 - game_over_text.get_height()//2))
+        main_menu_button.draw(screen, GameState.current)
+        main_menu_button.update()
+
+        clock.tick(30)
+        pygame.display.flip()
+
+    if GameState.current == "Game":
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                if event.key == pygame.K_TAB:
+                    debug = not debug
+                if event.key == pygame.K_s:
+                    state_switcher(3)
+            if event.type == pygame.JOYBUTTONDOWN:
+                if joystick.get_button(2):
+                    debug = not debug
+
+        screen.fill(GREY(0))
     
-    camera_x = player.real_x - WIDTH // 2
-    camera_y = player.real_y - HEIGHT // 2
-    
-    healthtext = simple_font.render(f"Health: {player.health}", True, GREY(255))
-    screen.blit(healthtext, (0, 3))
-    
-    if debug:
-        statstext = simple_font.render("Sword Stats-", True, GREY(255))
-        screen.blit(statstext, (0, 24))
-        swingtext = simple_font.render(f"Swing Speed: {sword.swing_speed}", True, GREY(255))
-        screen.blit(swingtext, (0, 48))
-        reachtext = simple_font.render(f"Vertical Reach: {sword.max_swing}", True, GREY(255))
-        screen.blit(reachtext, (0, 72))
-        dmgtext = simple_font.render(f"Damage: {sword.damage}", True, GREY(255))
-        screen.blit(dmgtext, (0, 96))
-        sword_time = pygame.time.get_ticks() - sword.atk_time if (pygame.time.get_ticks() - sword.atk_time) < sword.atk_delay else sword.atk_delay
-        cooldowntext = simple_font.render(f"Attack Cooldown Remaining: {sword_time} / {sword.atk_delay} ms", True, GREY(255))
-        screen.blit(cooldowntext, (0, 120))
-        DETECTION_BOX_OPACITY = 80
-    else:
-        DETECTION_BOX_OPACITY = 0
-    
-    screen.blit(player.image, (player.rect.x - camera_x, player.rect.y - camera_y))
-    player.update()
-    screen.blit(sword.image, (sword.rect.x - camera_x, sword.rect.y - camera_y))
-    sword.update()
+        camera_x = player.rect.centerx - (WIDTH // 2)
+        camera_y = player.rect.centery - (HEIGHT // 2)
 
-    for sprite in enemy_render_group:
-        screen.blit(sprite.image, (sprite.rect.x - camera_x, sprite.rect.y - camera_y))
-        sprite.update()
-    for sprite in ui_group:
-        screen.blit(sprite.image, sprite.rect)
-        sprite.update()
-    for lists in platforms:
-        for plat in lists:
-            screen.blit(plat.image, (plat.rect.x - camera_x, plat.rect.y - camera_y))
-            plat.update()
+        if player.real_y > floor_level:
+            player.real_x = origin_point[0]
+            player.real_y = origin_point[1]
+            player.lives -= 1
+            player.health = player.max_health
 
+        # ----------------- #
+        # --- RENDERING --- #
+        # ----------------- #
 
-    pygame.display.flip()
-    clock.tick(60)
+        # player and sword
+        screen.blit(player.image, (player.rect.x - camera_x, player.rect.y - camera_y))
+        player.update()
+        screen.blit(sword.image, (sword.rect.x - camera_x, sword.rect.y - camera_y))
+        sword.update()
 
-config = {
-    'debug': debug,
-    'audio': audio
-}
-manage_json("Config/config.json", config)
+        # enemies
+        for sprite in enemy_render_group:
+            screen.blit(sprite.image, (sprite.rect.x - camera_x, sprite.rect.y - camera_y))
+            sprite.update()
+        
+        # platforms
+        for lists in platforms:
+            for plat in lists:
+                screen.blit(plat.image, (plat.rect.x - camera_x, plat.rect.y - camera_y))
+                plat.update()
+                att_spawn_enemy((plat.rect.x, plat.rect.y+128))
+        
+        # ui
+        for sprite in ui_group:
+            screen.blit(sprite.image, sprite.rect)
+            sprite.update()
+        healthtext = simple_font.render(f"Health: {player.health}", True, GREY(255))
+        screen.blit(healthtext, (0, 3))
+
+        pygame.display.flip()
+        clock.tick(60)
 
 pygame.quit()

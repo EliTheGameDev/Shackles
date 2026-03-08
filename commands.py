@@ -1,4 +1,5 @@
 import json
+from constants import *
 
 def GREY(brightness):
     return (brightness,) * 3
@@ -22,3 +23,11 @@ def manage_json(file_name, data, mode="w"):
             return json.load(file)
     else:
         pass
+
+
+def state_switcher(state_index):
+    GameState.current = game_states[state_index]
+
+def lose_game(save):
+    state_switcher(4)
+    manage_json(f"Saves/save{save}.json", {"difficulty": 0, "level": 0, "checkpoint": 0, "has_started": 0, "save": save})

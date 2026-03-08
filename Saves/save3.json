@@ -2,5 +2,6 @@
     "difficulty": 2,
     "level": 0,
     "checkpoint": 0,
-    "has_started": 0
+    "has_started": 0,
+    "save": 3
 }

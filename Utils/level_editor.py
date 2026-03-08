@@ -116,6 +116,7 @@ def save_level_dialog(blocks, map_w, map_h):
 
     save_data = {
         "metadata": {"width": map_w, "height": map_h},
+        "enemies_spawnable": [], # Placeholder for future enemy data
         "blocks": all_blocks
     }
     with open(filepath, "w") as f:
