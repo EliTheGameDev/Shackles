@@ -1,7 +1,8 @@
 import pygame, random, math
 from commands import *
-from constants import *
+from values import *
 from platforms import *
+from groups import *
 pygame.init()
 
 screen = pygame.display.set_mode((0,0))
@@ -15,11 +16,7 @@ class DecoyController:
     def get_axis(self, degrees):
         return 0
 
-if pygame.joystick.get_count() > 0:
-    joystick = pygame.joystick.Joystick(0)
-    print(f"Controller {joystick.get_name()} connected!")
-else:
-    joystick = DecoyController()
+joystick = DecoyController()
 
 # Base Model For Enemies
 class Enemy(pygame.sprite.Sprite):
@@ -119,6 +116,14 @@ class Swordsman(pygame.sprite.Sprite):
         self.player_in_range = False
         self.player_is_found = False
         self.hit_platforms = 0
+        self.can_jump = True
+        self.jump_time = 0
+        self.jump_delay = 200
+        self.jump_height = 40
+        self.current_jump_height = 0
+        self.jumping = False
+        self.jump_slow = 0
+        self.jump_speed = 7
         
         self.real_x = self.rect.x
         self.real_y = self.rect.y
@@ -144,17 +149,42 @@ class Swordsman(pygame.sprite.Sprite):
                 self.direction = 1
             else:
                 self.direction = -1
+
+        if random.random() > 0.99 and self.can_jump and not self.jumping:
+            self.jumping = True
+            self.can_jump = False
+            self.jump_time = pygame.time.get_ticks()
+        
+        self.rect.x = self.real_x - camera_x
+        self.rect.y = self.real_y - camera_y
+
+        if self.jumping:
+            if self.jump_height > self.current_jump_height:
+                self.real_y -= self.jump_speed - self.jump_slow
+                self.current_jump_height += 2
+                self.jump_slow += 0.1
+            else:
+                self.jumping = False
+                self.current_jump_height = 0
+                self.jump_slow = 0
                 
         self.hit_platforms = pygame.sprite.spritecollide(self, plat_group, False)
 
         if self.hit_platforms:
             platform = self.hit_platforms[0]
             
-            if not self.rect.bottom <= platform.rect.top:
+            if not self.jumping and self.rect.bottom <= platform.rect.top + 6:
+                self.can_jump = True
                 self.real_y = platform.rect.top - self.rect.height
+                self.rect.y = self.real_y
             else:
                 self.real_y += 5
+                self.can_jump = False
         
+        elif not self.jumping:
+            self.real_y += 5
+            self.can_jump = False
+
         touching = self.rect.colliderect(sword.rect)
         
         if touching and sword.swinging:
@@ -176,9 +206,6 @@ class Swordsman(pygame.sprite.Sprite):
             self.image = pygame.transform.flip(self.image, True, False)
         
         self.old_direction = self.direction
-        
-        self.rect.x = self.real_x - camera_x
-        self.rect.y = self.real_y - camera_y
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, pos):
@@ -256,7 +283,10 @@ class Player(pygame.sprite.Sprite):
         self.hit_platforms = pygame.sprite.spritecollide(self, plat_group, False)
 
         if self.hit_platforms:
-            platform = self.hit_platforms[0]
+            plat_index = 0
+            while not self.hit_platforms[plat_index].isSolid:
+                plat_index += 1
+            platform = self.hit_platforms[plat_index]
             
             if not self.jumping and self.rect.bottom <= platform.rect.top + self.climb_max:
                 self.can_jump = True
@@ -283,12 +313,12 @@ class Player(pygame.sprite.Sprite):
                         if self.health <= 0:
                             self.lives -= 1
                             self.health = self.max_health
-                        if self.lives <= 0:
-                            lose_game(game_save)
                         self.is_hit_by.append(x)
                 else:
                     if x in self.is_hit_by:
                         self.is_hit_by.remove(x)
+            if self.lives <= 0:
+                lose_game(game_save)
 
 class SwordPiece(pygame.sprite.Sprite):
     def __init__(self, sprite, piece, category, swn_spd_mod, max_swn_mod, reach_mod, dmg_mod):
@@ -309,7 +339,7 @@ class SwordPiece(pygame.sprite.Sprite):
                 pass
 
 " This class is currently unused "
-class Sheith(pygame.sprite.Sprite):
+class Sheath(pygame.sprite.Sprite):
     def __init__(self, sprite, category, special_effect1, special_effect2):
         super().__init__()
         self.image = pygame.image.load(sprite).convert_alpha()
@@ -366,7 +396,7 @@ class Sword(pygame.sprite.Sprite):
         self.damage *= self.pieces[3].dmg_mod
         self.damage = math.floor(self.damage*10) / 10
         
-        self.atk_delay = (4 - self.swing_speed) * 800
+        self.atk_delay = ((4 - self.swing_speed) + (self.damage/2) + (self.reach * self.max_swing // 60)) * 450
         self.atk_time = 0
         
         self.selfX = 0
@@ -497,6 +527,51 @@ class Button(pygame.sprite.Sprite):
                 if self.rect.collidepoint(event.pos) and self.trigger_effect:
                     self.trigger_effect()
 
+class ScrollButton(pygame.sprite.Sprite):
+    def __init__(self, pos, size, font, color, hover_color, game_state_occurrence, text_options, trigger_effect=None, outline_color=GREY(255), outline_thickness=3):
+        super().__init__()
+        self.image = pygame.Surface(size)
+        self.rect = self.image.get_rect(center=pos)
+        self.text = text_options[0]
+        self.font = font
+        self.trigger_effect = trigger_effect
+        self.color = color
+        self.hover_color = hover_color
+        self.game_state_occurrence = game_state_occurrence
+        self.outline_color = outline_color
+        self.outline_thickness = outline_thickness
+        self.text_options = text_options
+        self.index = 0
+    
+    def scroll(self):
+        self.index += 1
+        if self.index >= len(self.text_options):
+            self.index = 0
+        self.text = self.text_options[self.index]
+    
+    def draw(self, screen, current_state):
+        # Only draw if we're in the right game state
+        if current_state == self.game_state_occurrence:
+            mouse_pos = pygame.mouse.get_pos()
+
+            # Fill color changes on hover
+            fill_color = self.hover_color if self.rect.collidepoint(mouse_pos) else self.color
+            pygame.draw.rect(screen, fill_color, self.rect)
+
+            # Draw outline (border)
+            pygame.draw.rect(screen, self.outline_color, self.rect, self.outline_thickness)
+
+            # Render text
+            text_surface = self.font.render(self.text, True, GREY(255))
+            text_rect = text_surface.get_rect(center=self.rect.center)
+            screen.blit(text_surface, text_rect)
+
+    def check_button_click(self, event, current_state):
+        if current_state == self.game_state_occurrence:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.rect.collidepoint(event.pos) and self.trigger_effect:
+                    self.trigger_effect()
+
 class Heart(pygame.sprite.Sprite):
     def __init__(self, heart_pos):
         super().__init__()
@@ -515,22 +590,162 @@ class Heart(pygame.sprite.Sprite):
         else:
             self.image = pygame.image.load("Assets/UI & GUI/HeartEmpty.png").convert_alpha()
 
+class Item(pygame.sprite.Sprite):
+    def __init__(self, sprite, name, description, effect, weight):
+        super().__init__()
+        self.spritepath = sprite
+        self.image = pygame.image.load(sprite).convert_alpha()
+        self.image = pygame.transform.scale(self.image, (192, 192))
+        self.rect = self.image.get_rect(center=(0, 0)) # Default position, can be changed when placed in the world
+        self.name = name
+        self.description = description
+        self.effect = effect
+        self.weight = weight  # Common: 20, Uncommon: 10, Rare: 3, Legendary: 1
+        self.info_box_open = False
+    
+    def update(self):
+        mouse = pygame.mouse.get_pos()
+        mouse_click = pygame.mouse.get_pressed()
+        
+        info_box = InfoBox((WIDTH//2, HEIGHT//2), (WIDTH//1.5, HEIGHT//1.5), pygame.time.get_ticks() + 500)
+        if self.weight == 20: noi_text_colour = (GREY(192)) # Common
+        elif self.weight == 10: noi_text_colour = (GREEN) # Uncommon
+        elif self.weight == 3: noi_text_colour = (RED) # Rare
+        elif self.weight == 1: noi_text_colour = (YELLOW) # Legendary
+        else: noi_text_colour = (BLUE) # Undefined Rarity
+        noi_text = Text((WIDTH//2, HEIGHT//6), self.name, simple_font, colour=noi_text_colour)
+        r_click_text = Text((WIDTH//2, HEIGHT//5), "Press ESC to Close Box", simple_font)
+        item_image = DisplayObject((WIDTH//2, HEIGHT//2.5), self.spritepath, WIDTH//6)
+        desc_text = Text((WIDTH//2, HEIGHT//1.75), self.description, simple_font)
+
+        if self.rect.collidepoint(mouse[0], mouse[1]) and mouse_click[2] and not self.info_box_open:
+            self.info_box_open = True
+            chest_ui_group.add(info_box, noi_text, r_click_text, item_image, desc_text)
+        
+        if self.rect.collidepoint(mouse[0], mouse[1]) and mouse_click[0] and not self.info_box_open:
+            global item_selected
+            item_selected = True
+
+        if not info_box.is_active:
+            info_box.kill()
+            noi_text.kill()
+            item_image.kill()
+            desc_text.kill()
+            self.info_box_open = False
+
+class Text(pygame.sprite.Sprite):
+    def __init__(self, pos, text, font, colour=GREY(255)):
+        super().__init__()
+        self.font = font
+        self.text = text
+        self.colour = colour
+
+        self.image = font.render(text, True, colour)
+        self.rect = self.image.get_rect(center=pos)
+    
+    def modify_properties(self, text=None, colour=None):
+        if text:
+            self.text = text
+        if colour:
+            self.colour = text
+        
+        self.image = font.render(text, True, colour)
+        self.rect = self.image.get_rect(center=pos)
+
+class InfoBox(pygame.sprite.Sprite):
+    def __init__(self, pos, size, wait):
+        super().__init__()
+        self.image = pygame.Surface(size)
+        self.image.fill(GREY(64))
+        self.rect = self.image.get_rect(center=pos)
+        self.is_active = True
+        self.wait = wait
+    
+    def update(self):
+        keys = pygame.key.get_pressed()
+        
+        if keys[pygame.K_ESCAPE]:
+            self.is_active = False
+
+class DisplayObject(pygame.sprite.Sprite):
+    def __init__(self, pos, sprite, scale):
+        super().__init__()
+        self.scale = scale
+
+        self.image = pygame.image.load(sprite).convert_alpha()
+        self.image = pygame.transform.scale(self.image, (scale, scale))
+        self.rect = self.image.get_rect(center=pos)
+
 old_handle = SwordPiece("Assets/Images/Sword/Handle/Handle - Old.png", "Handle", "Old", 1, 1, 1, 1)
 old_blade = SwordPiece("Assets/Images/Sword/Blade/Blade - Old.png", "Blade", "Old", 1, 1, 1, 1)
 old_foreblade = SwordPiece("Assets/Images/Sword/Foreblade/Foreblade - Old.png", "Foreblade", "Old", 1, 1, 1, 1)
-old_sheith = SwordPiece("Assets/Images/Sword/Sheith/Sheith - Old.png", "Sheith", "Old", 1, 1, 1, 1)
-old_set = [old_handle, old_blade, old_foreblade, old_sheith]
+old_sheath = SwordPiece("Assets/Images/Sword/Sheath/Sheath - Old.png", "Sheath", "Old", 1, 1, 1, 1)
+old_set = [old_handle, old_blade, old_foreblade, old_sheath]
 
 lancing_handle = SwordPiece("Assets/Images/Sword/Handle/Handle - Lancing.png", "Handle", "Lancing", 0.7, 0.5, 3, 0.9)
 lancing_blade = SwordPiece("Assets/Images/Sword/Blade/Blade - Fencing.png", "Blade", "Lancing", 0.7, 0.5, 3, 1.1)
 lancing_foreblade = SwordPiece("Assets/Images/Sword/Foreblade/Foreblade - Lancing.png", "Foreblade", "Lancing", 0.8, 1.2, 1.4, 1.3)
-lancing_sheith = SwordPiece("Assets/Images/Sword/Sheith/Sheith - Lancing.png", "Sheith", "Lancing", 1, 1, 1, 1)
-lancing_set = [lancing_blade, lancing_foreblade, lancing_handle, lancing_sheith]
+lancing_sheath = SwordPiece("Assets/Images/Sword/Sheath/Sheath - Lancing.png", "Sheath", "Lancing", 1, 1, 1, 1)
+lancing_set = [lancing_blade, lancing_foreblade, lancing_handle, lancing_sheath]
+
+brutish_handle = SwordPiece("Assets/Images/Sword/Handle/Handle - Brutish.png", "Handle", "Brutish", 0.8, 1.2, 0.9, 1.2)
+brutish_blade = SwordPiece("Assets/Images/Sword/Blade/Blade - Brutish.png", "Blade", "Brutish", 1.3, 1.1, 0.7, 1.3)
+brutish_foreblade = SwordPiece("Assets/Images/Sword/Foreblade/Foreblade - Brutish.png", "Foreblade", "Brutish", 1.05, 1, 1.05, 1.15)
+brutish_sheath = SwordPiece("Assets/Images/Sword/Sheath/Sheath - Brutish.png", "Sheath", "Brutish", 1, 1, 1, 1)
+brutish_set = [brutish_blade, brutish_foreblade, brutish_handle, brutish_sheath]
+
+classic_handle = SwordPiece("Assets/Images/Sword/Handle/Handle - Classic.png", "Handle", "Classic", 1.15, 1, 1, 1.05)
+classic_blade = SwordPiece("Assets/Images/Sword/Blade/Blade - Classic.png", "Blade", "Classic", 1.2, 0.9, 1.1, 1)
+classic_foreblade = SwordPiece("Assets/Images/Sword/Foreblade/Foreblade - Classic.png", "Foreblade", "Classic", 1.1, 1.05, 1, 1.2)
+classic_sheath = SwordPiece("Assets/Images/Sword/Sheath/Sheath - Classic.png", "Sheath", "Classic", 1, 1, 1, 1)
+classic_set = [classic_handle, classic_blade, classic_foreblade, classic_sheath]
 
 origin_point = (WIDTH / 2, 1600)
 
+# Collectibles
+ancient_key = Item("Assets/Images/Items and Blocks/Collectibles/AncientKey.png", "Ancient Key", "An old enchanted key that seems to fit in a chest's lock.", "Next chest you open will only contain artifacts", 1)
+legendary_key = Item("Assets/Images/Items and Blocks/Collectibles/LegendaryKey.png", "Legendary Key", "A gold-plated key with a chest as its handle. It clearly opens a chest better than you can.", "Next chest will contain 5 items instead of 3. You may also pick an aditional item from this increased pool.", 1)
+boat_coupon = Item("Assets/Images/Items and Blocks/Collectibles/BoatCoupon.png", "Boat Coupon", "A handwritten coupon for a boat ride. It's clearly been in that chest for many years.", "Next boat ride is free.", 3)
+market_coupon = Item("Assets/Images/Items and Blocks/Collectibles/MarketCoupon.png", "Market Coupon", "A printed coupon for the market. It has a scratch off slot that says: Do not scratch, or coupon is invalid.", "Next market purchase has a random multiplier, usually good, but not always.", 3)
+coins_10 = Item("Assets/Images/Items and Blocks/Collectibles/Coins-10.png", "10 Coins", "A handful of golden coins.", "Gain 10 coins.", 20)
+coins_20 = Item("Assets/Images/Items and Blocks/Collectibles/Coins-20.png", "20 Coins", "A pile of golden coins.", "Gain 20 coins.", 10)
+coins_30 = Item("Assets/Images/Items and Blocks/Collectibles/Coins-30.png", "30 Coins", "A small bag of golden coins.", "Gain 30 coins.", 3)
+coins_50 = Item("Assets/Images/Items and Blocks/Collectibles/Coins-50.png", "50 Coins", "A bag filled with golden coins.", "Gain 50 coins.", 1)
+coins_100 = Item("Assets/Images/Items and Blocks/Collectibles/Coins-100.png", "100 Coins", "There's so many coins in this bag that it's ripping!", "Gain 100 coins.", 1)
+energy_herb = Item("Assets/Images/Items and Blocks/Collectibles/EnergyHerb.png", "Energy Herb", "A seemingly unremarkable leaf-shaped herb. It's a vibrant green and looks healthy.", "Halves your cooldowns for 90 seconds.", 10)
+springy_shoes = Item("Assets/Images/Items and Blocks/Collectibles/SpringyShoes.png", "Springy Shoes", "Leather shoes with springs inspired by the Springboards on them. They won't last very long.", "Doubles your jump height for 90 seconds.", 10)
+sprinting_shoes = Item("Assets/Images/Items and Blocks/Collectibles/SprintingShoes.png", "Sprinting Shoes", "Simple shoes with large lightning bolts on the side. They won't last very long.", "Increases your movement speed by 50% for 90 seconds.", 20)
+feather_shoes = Item("Assets/Images/Items and Blocks/Collectibles/FeatherShoes.png", "Feather Shoes", "Utility shoes with crude feathers on them. They won't last very long.", "Reduces fall speed by 25% for 90 seconds.", 20)
+shoddy_shield = Item("Assets/Images/Items and Blocks/Collectibles/ShoddyShield.png", "Shoddy Shield", "A shield that looks like the top of a tree stump. It is fairly delicate, and won't block well.", "Reduces damage taken by 33% 3 times.", 20)
+modest_shield = Item("Assets/Images/Items and Blocks/Collectibles/ModestShield.png", "Modest Shield", "A shield that seems like it was carved quickly. It has a distinct ringed design. It isn't the sturdiest, and won't block well.", "Reduces damage taken by 33% 5 times.", 10)
+masterful_shield = Item("Assets/Images/Items and Blocks/Collectibles/MasterfulShield.png", "Masterful Shield", "A hefty metal and wood shield that seems it was a blasksmith's pride and joy for many months. Despite being durable, it won't block well.", "Reduces damage taken by 33% 8 times.", 3)
+grabby_hand = Item("Assets/Images/Items and Blocks/Collectibles/GrabbyHand.png", "Grabby Hand", "A simple device that looks as if a cartoon extendo punching glove open its hand.", "Increases reach and swing by 30% for 90 seconds.", 20)
+poor_meal = Item("Assets/Images/Items and Blocks/Collectibles/PoorMeal.png", "Poor Meal", "A small bowl with cold rice, chicken, and greens. You're lucky there's no mould on it.", "Heals 5 health.", 20)
+decent_meal = Item("Assets/Images/Items and Blocks/Collectibles/DecentMeal.png", "Decent Meal", "A bowl of lukewarm chicken soup that reminds you of home.", "Heals 10 health and all conditions.", 10)
+medicinal_meal = Item("Assets/Images/Items and Blocks/Collectibles/MedicinalMeal.png", "Medicinal Meal", "An oddly green steamy soup. It smells of mint and basil. It's like what a dietician would recommend to a vegan.", "Heals a life and all negetive conditions.", 3)
+hearty_meal = Item("Assets/Images/Items and Blocks/Collectibles/HeartyMeal.png", "Hearty Meal", "An appetising spaghetti bolognese with Swedish meatballs. It looks delicious and freshly prepared.", "Fully heals your health, but heals a life instead if 25% or less health would be healed.", 3)
+enchanted_meal = Item("Assets/Images/Items and Blocks/Collectibles/EnchantedMeal.png", "Enchanted Meal", "An odd supernaturally blue soup with a blue carrot. Despite seeming radioactive, it emanantes an enchanting energy.", "Fully heals you and grants an enchanted life.", 1)
+
+items = [ancient_key, legendary_key, boat_coupon, market_coupon, coins_10, coins_20, coins_30, coins_50, coins_100, energy_herb, springy_shoes, sprinting_shoes, feather_shoes, shoddy_shield, modest_shield, masterful_shield, grabby_hand, poor_meal, decent_meal, medicinal_meal, hearty_meal, enchanted_meal]
+sets = [old_set, lancing_set, brutish_set, classic_set]
+item_pool = []
+
+for s in sets:
+    for piece in s:
+        for i in range(10):
+            item_pool.append(piece)
+
+for item in items:
+    for i in range(item.weight):
+        item_pool.append(item)
+
+# Create player, sword, and hearts
 player = Player(origin_point)
-sword = Sword(player, lancing_set)
+sword = Sword(player, [brutish_handle, brutish_blade, lancing_foreblade, old_sheath])
 heart1 = Heart(1)
 heart2 = Heart(2)
 heart3 = Heart(3)
+
+# Put them in groups
+player_group.add(player)
+ui_group.add(heart1, heart2, heart3)

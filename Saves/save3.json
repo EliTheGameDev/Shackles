@@ -1,7 +1,18 @@
 {
-    "difficulty": 2,
+    "difficulty": 0,
     "level": 0,
     "checkpoint": 0,
     "has_started": 0,
-    "save": 3
+    "save": 3,
+    "player_data": {
+        "health": 20,
+        "max_health": 20,
+        "lives": 3
+    },
+    "sword_data": {
+        "blade": "Blade - Old",
+        "handle": "Handle - Old",
+        "foreblade": "Foreblade - Old",
+        "sheath": "Sheath - Old"
+    }
 }

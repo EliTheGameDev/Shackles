@@ -58,6 +58,11 @@ def register_platform(plat):
     platform_registry[plat.id] = plat
 
 def get_platform(pid):
+    # Handle checkpoint obelisks with numbers (e.g., "Ruined Obelisk7")
+    if pid.startswith(("Aquatic Obelisk", "Ruined Obelisk", "Verdant Obelisk")):
+        for region in ["Aquatic Obelisk", "Ruined Obelisk", "Verdant Obelisk"]:
+            if pid.startswith(region):
+                return platform_registry.get(region, platform_registry.get("Empty"))
     return platform_registry.get(pid, platform_registry.get("Empty"))
 
 # Register default tools
@@ -77,6 +82,19 @@ for p_type in platform_types:
         
         fallback_color = (50 + (len(p_type)*20) % 200, 100, 50 + (len(prefix)*20) % 200)
         register_platform(PlatformType(plat_name, color=fallback_color, sprite_path=plat_path))
+
+for region in ["Aquatic", "Ruined", "Verdant"]:
+    register_platform(PlatformType(f"{region} Obelisk", color=(180, 180, 180), sprite_path=f"Assets/Images/Platforms/Checkpoints/{region}_Obelisk.png"))
+
+register_platform(PlatformType("Chest", color=(200, 100, 25), sprite_path="Assets/Images/Items and Blocks/Chest.png"))
+register_platform(PlatformType("Activator Panel", color=(100, 100, 100), sprite_path="Assets/Images/Platforms/Non-Solid Platforms/Activator_Panel.png"))
+register_platform(PlatformType("Springboard", color=(255, 0, 0), sprite_path="Assets/Images/Platforms/Functional Platforms/Springboard.png"))
+register_platform(PlatformType("Wood Background", color=(200, 100, 30), sprite_path="Assets/Images/Platforms/Non-Solid Platforms/Wood_BG.png"))
+register_platform(PlatformType("Wood Door", color=(200, 100, 20), sprite_path="Assets/Images/Platforms/Non-Solid Platforms/Wood_Door.png"))
+register_platform(PlatformType("Wood Door 1", color=(200, 100, 21), sprite_path="Assets/Images/Platforms/Non-Solid Platforms/Wood_Door1.png"))
+register_platform(PlatformType("Wood Wall", color=(220, 110, 30), sprite_path="Assets/Images/Platforms/Structural Platforms/Wood_Wall.png"))
+register_platform(PlatformType("Bridge", color=(180, 120, 0), sprite_path="Assets/Images/Platforms/Structural Platforms/Bridge.png"))
+register_platform(PlatformType("Exit Portal", color=(150, 50, 120), sprite_path="Assets/Images/Items and Blocks/Exit_Portal.png"))
 
 # --------------------
 # Helper Functions
@@ -183,10 +201,15 @@ def main():
     # Text Input UI setup
     input_w_rect = pygame.Rect(100, 7, 50, 26)
     input_h_rect = pygame.Rect(230, 7, 50, 26)
+    input_checkpoint_rect = pygame.Rect(380, 7, 50, 26)
     active_w = False
     active_h = False
+    active_checkpoint = False
     text_w = str(map_width)
     text_h = str(map_height)
+    text_checkpoint = ""
+    modify_mode = False
+    current_modify_pos = None
 
     running = True
     while running:
@@ -199,14 +222,35 @@ def main():
                 if input_w_rect.collidepoint(event.pos):
                     active_w = True
                     active_h = False
+                    active_checkpoint = False
                 elif input_h_rect.collidepoint(event.pos):
                     active_h = True
                     active_w = False
+                    active_checkpoint = False
+                elif input_checkpoint_rect.collidepoint(event.pos):
+                    active_checkpoint = True
+                    active_w = False
+                    active_h = False
                 else:
                     active_w = False
                     active_h = False
+                    active_checkpoint = False
                     if text_w.isdigit() and int(text_w) > 0: map_width = int(text_w)
                     if text_h.isdigit() and int(text_h) > 0: map_height = int(text_h)
+                    
+                    # Middle click to modify checkpoint in modify mode
+                    if modify_mode and event.button == 2 and CATEGORY_BAR_HEIGHT < event.pos[1] < SCREEN_HEIGHT - HOTBAR_HEIGHT:
+                        wx, wy = screen_to_world(event.pos[0], event.pos[1], cam_x, cam_y)
+                        if 0 <= wx < map_width and 0 <= wy < map_height:
+                            pid = blocks.get((wx, wy), "Empty")
+                            if pid.startswith(("Aquatic Obelisk", "Ruined Obelisk", "Verdant Obelisk")):
+                                current_modify_pos = (wx, wy)
+                                # Extract existing checkpoint number if any
+                                for region in ["Aquatic Obelisk", "Ruined Obelisk", "Verdant Obelisk"]:
+                                    if pid.startswith(region):
+                                        text_checkpoint = pid[len(region):]
+                                        active_checkpoint = True
+                                        break
 
             if event.type == pygame.KEYDOWN:
                 if active_w:
@@ -225,21 +269,47 @@ def main():
                         text_h = text_h[:-1]
                     elif event.unicode.isdigit():
                         text_h += event.unicode
+                elif active_checkpoint:
+                    if event.key == pygame.K_RETURN:
+                        active_checkpoint = False
+                        if current_modify_pos and text_checkpoint:
+                            wx, wy = current_modify_pos
+                            pid = blocks.get((wx, wy), "Empty")
+                            # Extract the obelisk type
+                            for region in ["Aquatic Obelisk", "Ruined Obelisk", "Verdant_ belisk"]:
+                                if pid.startswith(region):
+                                    blocks[(wx, wy)] = region + text_checkpoint
+                                    current_modify_pos = None
+                                    text_checkpoint = ""
+                                    break
+                    elif event.key == pygame.K_BACKSPACE:
+                        text_checkpoint = text_checkpoint[:-1]
+                    elif event.key == pygame.K_ESCAPE:
+                        active_checkpoint = False
+                        current_modify_pos = None
+                        text_checkpoint = ""
+                    elif event.unicode.isdigit():
+                        text_checkpoint += event.unicode
                 else:
+                    # Toggle modify mode
+                    if event.key == pygame.K_m:
+                        modify_mode = not modify_mode
+                        current_modify_pos = None
+                        text_checkpoint = ""
                     # Save Level Trigger
-                    if event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
+                    elif event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
                         # Release keys so we don't get stuck holding Ctrl after the window closes
                         pygame.event.clear() 
                         save_level_dialog(blocks, map_width, map_height)
                         
-                    if event.key == pygame.K_e:
+                    elif event.key == pygame.K_e:
                         current_selection_idx = (current_selection_idx + 1) % len(available_platforms)
-                    if event.key == pygame.K_q:
+                    elif event.key == pygame.K_q:
                         current_selection_idx = (current_selection_idx - 1) % len(available_platforms)
 
         # --- Input for Camera ---
         keys = pygame.key.get_pressed()
-        if not (active_w or active_h):
+        if not (active_w or active_h or active_checkpoint):
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 cam_x -= speed
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
@@ -315,8 +385,21 @@ def main():
         txt_h_surf = ui_font.render(text_h, True, TEXT_COLOR)
         screen.blit(txt_h_surf, (input_h_rect.x + 5, input_h_rect.y + 5))
 
-        info_text = ui_font.render("WASD/Arrows: Move | L-Click: Place | R-Click: Erase | Ctrl+S: Save", True, (150, 150, 150))
-        screen.blit(info_text, (350, 12))
+        # Checkpoint number input (only show if in modify mode)
+        if modify_mode:
+            lbl_checkpoint = ui_font.render("Checkpoint #:", True, TEXT_COLOR)
+            screen.blit(lbl_checkpoint, (300, 12))
+            checkpoint_color = INPUT_ACTIVE if active_checkpoint else INPUT_INACTIVE
+            pygame.draw.rect(screen, checkpoint_color, input_checkpoint_rect)
+            pygame.draw.rect(screen, TEXT_COLOR, input_checkpoint_rect, 2)
+            txt_checkpoint_surf = ui_font.render(text_checkpoint, True, TEXT_COLOR)
+            screen.blit(txt_checkpoint_surf, (input_checkpoint_rect.x + 5, input_checkpoint_rect.y + 5))
+            
+            mode_indicator = ui_font.render("MODIFY MODE (Mid-Click Obelisk | M to Exit)", True, (0, 255, 100))
+            screen.blit(mode_indicator, (500, 12))
+        else:
+            info_text = ui_font.render("WASD/Arrows: Move | L-Click: Place | R-Click: Erase | Ctrl+S: Save | M: Modify", True, (150, 150, 150))
+            screen.blit(info_text, (350, 12))
 
         pygame.display.flip()
         clock.tick(FPS)

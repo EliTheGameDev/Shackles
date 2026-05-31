@@ -426,7 +426,7 @@ Movement Type - Walk
 
 Detect Range - 192px
 
-Vision Range - 60px x 50px
+Attack Range - 60px x 50px
 
 Weapon Type - Sword
 
@@ -446,7 +446,7 @@ Power Gem (5%, Tiered)
 
 Health - 5
 
-Damage - 1
+Damage - 1.5
 
 Velocity - 128px / S
 
@@ -472,11 +472,165 @@ Reach Gem (5%, Tiered)
 
 ##### The Horse Jockey:
 
+###### Stats:
+
+Health - 5
+
+Damage - 1
+
+Reach - x4
+
+Height - x0.1
+
+Movement Speed - 6
+
+Movement Type - Walk (Charge)
+
+Detect Range - 224px
+
+Weapon Type - Sword
+
+Weapon Texture - Horse Jockey Sword
+
+###### Loot:
+
+$3 (100%, with $1 +/- variance)
+
+Speed Gem (5%, Tiered)
+
 
 
 ##### The Pickpocket:
 
+###### Stats:
+
+Health - 5
+
+Damage - 1
+
+Movement Speed - 5
+
+Movement Type - Walk
+
+Detect Range - 160px
+
+Weapon Type - Melee (Steals $1 per hit)
+
+Weapon Texture - None
+
+###### Loot:
+
+$3 + 80% (Rounded) of Stolen Money
+
+Intimidation Gem (5%, Tiered)
+
 
 
 ##### The Anomaly:
+
+###### Stats:
+
+Health - 5
+
+Damage - 0.5 dps
+
+Movement Speed - 2
+
+Movement Type - Float (Noclip)
+
+Detect Range - 256px
+
+Weapon Type - Passive Drain (HP Gain = Dmg)
+
+Weapon Texture - Phantom Particle
+
+###### Loot:
+
+$3
+
+Anomaly Aura (20%, Tiered)
+
+
+
+##### The Batterer:
+
+###### Stats:
+
+Health - 5
+
+Damage - 3 + High Knockback
+
+Movement Speed - 8
+
+Movement Type - Walk (Charge)
+
+Detect Range - 192px
+
+Attack Reach - x5
+
+Weapon Type - Mounted Charge
+
+Weapon Texture - Battering Ram
+
+###### Loot:
+
+$5 (100%, with 2 -/+ variance)
+
+Charge Amulet (5%, Tiered)
+
+
+
+##### The Army-dillo:
+
+###### Stats:
+
+Health - 8
+
+Damage - Melee (1.5), Roll (1 + Moderate Knockback)
+
+Movement Speed - Walk (2), Roll (4 + 0.5 x SecondsSpentRolling)
+
+Movement Type - Walk, Roll
+
+Detect Range - 224px
+
+Weapon Type - Melee, Contact
+
+Weapon Texture - None
+
+###### Loot:
+
+$4 (100%, with 1 -/+ variance)
+
+Army Helmet (5%, Sellable)
+
+
+
+##### Piranha:
+
+###### Stats:
+
+Health - 3
+
+Damage - 2.5 + Bleed Effect
+
+Movement Speed - 6
+
+Movement Type - Swim
+
+Detect Range - 128px
+
+Weapon Type - Melee (Bite)
+
+Weapon Texture - Fangs
+
+###### Loot:
+
+$3
+
+Piranha Fin (5%, Tiered)
+
+Piranha Fang (5%, Tiered)
+
+
 

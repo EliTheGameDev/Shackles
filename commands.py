@@ -1,5 +1,5 @@
 import json
-from constants import *
+from values import *
 
 def GREY(brightness):
     return (brightness,) * 3
