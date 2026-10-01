@@ -1,7 +1,7 @@
 {
     "difficulty": 0,
     "level": 0,
-    "checkpoint": "1",
+    "checkpoint": 0,
     "has_started": 1,
     "save": 1,
     "player_data": {
@@ -10,8 +10,8 @@
         "lives": 3
     },
     "sword_data": {
-        "blade": "Blade - Old",
         "handle": "Handle - Old",
+        "blade": "Blade - Old",
         "foreblade": "Foreblade - Old",
         "sheath": "Sheath - Old"
     }

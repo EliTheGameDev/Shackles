@@ -1,10 +1,11 @@
 import pygame
 from commands import *
+import values
 pygame.init()
 
 # --- PLATFORM --- #
 class Platform(pygame.sprite.Sprite):
-    def __init__(self, pos, sprite, isCheckPoint=False, isChest=False, isSolid=True, isExit=False, bouncer=0):
+    def __init__(self, pos, sprite, isCheckPoint=False, isChest=False, isSolid=True, isExit=False, text=None, bouncer=0):
         super().__init__()
         self.image = pygame.image.load(sprite).convert_alpha()
         self.image = pygame.transform.scale(self.image, (64, 64))
@@ -13,14 +14,24 @@ class Platform(pygame.sprite.Sprite):
         self.isSolid = isSolid
         self.isChest = isChest
         self.isExit = isExit
+        self.text = text
         self.bouncer = bouncer
+        self.enemy_spawned = False
 
 platforms = []
 
 def create_level(level):
     global platforms
+    platforms.clear()
+    if 'plat_group' in globals():
+        plat_group.empty()
     plat_size = 64
     plat_list_val = -1
+    values.floor_level = -64
+    values.origin_point[1] = -320
+    for plat in fetch_level_data(level)[0]:
+        values.floor_level += 64
+        values.origin_point[1] += 64
     for plat_list in fetch_level_data(level):
         platforms.append([])
         plat_list_val += 1
@@ -31,7 +42,9 @@ def create_level(level):
                 try:
                     platforms[plat_list_val].append(Platform((plat_list_val*plat_size, plat_val*plat_size), f"Assets/Images/Platforms/Ground-Based Platforms/{plat} Platform.png"))
                 except FileNotFoundError:
-                    if "Obelisk" in plat:
+                    if "Text:" in plat:
+                        platforms[plat_list_val].append(Platform((plat_list_val*plat_size, plat_val*plat_size), f"Assets/Images/Items and Blocks/Text_Bubble.png", isSolid=False, text=plat.replace("Text:", "")))
+                    elif "Obelisk" in plat:
                         plat = list(plat)
                         if plat[-1] != 'k':
                             checkpoint = plat.pop(-1)
@@ -53,11 +66,14 @@ def create_level(level):
                         platforms[plat_list_val].append(Platform((plat_list_val*plat_size, plat_val*plat_size), f"Assets/Images/Items and Blocks/Exit_Portal.png", isSolid=False, isExit=True))
                     elif "Wood Wall" in plat:
                         platforms[plat_list_val].append(Platform((plat_list_val*plat_size, plat_val*plat_size), f"Assets/Images/Platforms/Structural Platforms/Wood_Wall.png"))
-
+                    elif "Bridge" in plat:
+                        platforms[plat_list_val].append(Platform((plat_list_val*plat_size, plat_val*plat_size), f"Assets/Images/Platforms/Structural Platforms/Bridge.png"))
+                    
 plat_group = pygame.sprite.Group()
 
 def plat_to_group():
     global plat_group
+    plat_group.empty()
     for plat_list in platforms:
         for plat in plat_list:
             plat_group.add(plat)

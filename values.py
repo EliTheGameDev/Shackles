@@ -12,20 +12,15 @@ PURPLE = (255, 0, 255)
 # Screen
 screen_dimensions = pygame.display.Info()
 WIDTH, HEIGHT = screen_dimensions.current_w, screen_dimensions.current_h
-floor_level = 1856
+floor_level = 1856 # Correct Floor Level for Height 30. Formula = Level Height - 1 x 64
+origin_point = [WIDTH / 2, 1600] # Origin Point = Floor Level - 256
 
 # Difficulties
 difficulties = ["Brain Freeze", "Headache", "Migraine", "Cluster", "Thunderclap"]
 
-# Groups
-enemy_render_group = pygame.sprite.Group()
-
 # Camera
 camera_x = 0
 camera_y = 0
-
-# Other Universal Vars
-item_selected = False
 
 # Font
 rabid_science = pygame.font.Font("Assets/Fonts/Rabid Science.ttf", 48)
@@ -43,3 +38,13 @@ class GameState:
 
 # Audio Lists
 sword_slashes = [pygame.mixer.Sound("Assets/Sounds/SFX/Sword Slash 1.mp3"), pygame.mixer.Sound("Assets/Sounds/SFX/Sword Slash 2.mp3")]
+
+# Keybinds
+key_slash = pygame.K_w
+key_left = pygame.K_a
+key_right = pygame.K_d
+key_jump = pygame.K_SPACE
+key_pause = pygame.K_s
+key_dash = pygame.K_q
+key_interact = pygame.K_e
+key_debug = pygame.K_TAB

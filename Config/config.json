@@ -1,4 +1,14 @@
 {
     "debug": true,
-    "audio": true
+    "audio": true,
+    "keybinds": {
+        "left": "a",
+        "right": "d",
+        "slash": "w",
+        "jump": "space",
+        "pause": "s",
+        "dash": "q",
+        "interact": "e",
+        "debug": "tab"
+    }
 }

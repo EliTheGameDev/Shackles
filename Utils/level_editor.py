@@ -29,6 +29,7 @@ UI_BG = (30, 30, 30)
 TEXT_COLOR = (255, 255, 255)
 INPUT_INACTIVE = (60, 60, 60)
 INPUT_ACTIVE = (100, 100, 150)
+TEXT_BLOCK_PREFIX = "Text:"
 
 # 2. SETUP DISPLAY BEFORE LOADING IMAGES
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -68,6 +69,7 @@ def get_platform(pid):
 # Register default tools
 register_platform(PlatformType("Empty", color=(0, 0, 0)))
 register_platform(PlatformType("Eraser", color=(255, 100, 100)))
+register_platform(PlatformType("Text Block", color=(80, 150, 220)))
 
 # ==========================================
 # AUTOMATIC PLATFORM GENERATION (18 Total)
@@ -202,12 +204,15 @@ def main():
     input_w_rect = pygame.Rect(100, 7, 50, 26)
     input_h_rect = pygame.Rect(230, 7, 50, 26)
     input_checkpoint_rect = pygame.Rect(380, 7, 50, 26)
+    input_text_rect = pygame.Rect(500, 7, 390, 26)
     active_w = False
     active_h = False
     active_checkpoint = False
+    active_text = False
     text_w = str(map_width)
     text_h = str(map_height)
     text_checkpoint = ""
+    text_value = ""
     modify_mode = False
     current_modify_pos = None
 
@@ -231,10 +236,17 @@ def main():
                     active_checkpoint = True
                     active_w = False
                     active_h = False
+                    active_text = False
+                elif modify_mode and input_text_rect.collidepoint(event.pos):
+                    active_text = True
+                    active_checkpoint = False
+                    active_w = False
+                    active_h = False
                 else:
                     active_w = False
                     active_h = False
                     active_checkpoint = False
+                    active_text = False
                     if text_w.isdigit() and int(text_w) > 0: map_width = int(text_w)
                     if text_h.isdigit() and int(text_h) > 0: map_height = int(text_h)
                     
@@ -251,6 +263,10 @@ def main():
                                         text_checkpoint = pid[len(region):]
                                         active_checkpoint = True
                                         break
+                            elif isinstance(pid, str) and (pid == "Text Block" or pid.startswith(TEXT_BLOCK_PREFIX)):
+                                current_modify_pos = (wx, wy)
+                                text_value = "" if pid == "Text Block" else pid[len(TEXT_BLOCK_PREFIX):]
+                                active_text = True
 
             if event.type == pygame.KEYDOWN:
                 if active_w:
@@ -276,7 +292,7 @@ def main():
                             wx, wy = current_modify_pos
                             pid = blocks.get((wx, wy), "Empty")
                             # Extract the obelisk type
-                            for region in ["Aquatic Obelisk", "Ruined Obelisk", "Verdant_ belisk"]:
+                            for region in ["Aquatic Obelisk", "Ruined Obelisk", "Verdant Obelisk"]:
                                 if pid.startswith(region):
                                     blocks[(wx, wy)] = region + text_checkpoint
                                     current_modify_pos = None
@@ -290,12 +306,27 @@ def main():
                         text_checkpoint = ""
                     elif event.unicode.isdigit():
                         text_checkpoint += event.unicode
+                elif active_text:
+                    if event.key == pygame.K_RETURN:
+                        active_text = False
+                        if current_modify_pos:
+                            blocks[current_modify_pos] = TEXT_BLOCK_PREFIX + text_value
+                            current_modify_pos = None
+                    elif event.key == pygame.K_BACKSPACE:
+                        text_value = text_value[:-1]
+                    elif event.key == pygame.K_ESCAPE:
+                        active_text = False
+                        current_modify_pos = None
+                        text_value = ""
+                    elif event.key not in (pygame.K_RETURN, pygame.K_ESCAPE):
+                        text_value += event.unicode
                 else:
                     # Toggle modify mode
                     if event.key == pygame.K_m:
                         modify_mode = not modify_mode
                         current_modify_pos = None
                         text_checkpoint = ""
+                        text_value = ""
                     # Save Level Trigger
                     elif event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
                         # Release keys so we don't get stuck holding Ctrl after the window closes
@@ -309,7 +340,7 @@ def main():
 
         # --- Input for Camera ---
         keys = pygame.key.get_pressed()
-        if not (active_w or active_h or active_checkpoint):
+        if not (active_w or active_h or active_checkpoint or active_text):
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 cam_x -= speed
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
@@ -333,7 +364,8 @@ def main():
             
             if 0 <= wx < map_width and 0 <= wy < map_height:
                 if mouse_btns[0]:
-                    blocks[(wx, wy)] = available_platforms[current_selection_idx]
+                    selected_platform = available_platforms[current_selection_idx]
+                    blocks[(wx, wy)] = TEXT_BLOCK_PREFIX if selected_platform == "Text Block" else selected_platform
                 if mouse_btns[2]:
                     if (wx, wy) in blocks:
                         del blocks[(wx, wy)]
@@ -358,11 +390,18 @@ def main():
 
                 pid = blocks.get((wx, wy), "Empty")
                 if pid != "Empty":
-                    plat = get_platform(pid)
-                    if plat.sprite:
-                        screen.blit(plat.sprite, rect)
+                    if isinstance(pid, str) and (pid == "Text Block" or pid.startswith(TEXT_BLOCK_PREFIX)):
+                        pygame.draw.rect(screen, (25, 65, 105), rect)
+                        displayed_text = "" if pid == "Text Block" else pid[len(TEXT_BLOCK_PREFIX):]
+                        text_surface = ui_font.render(displayed_text, True, TEXT_COLOR)
+                        text_area = pygame.Rect(0, 0, min(rect.width, text_surface.get_width()), min(rect.height, text_surface.get_height()))
+                        screen.blit(text_surface, rect.topleft, text_area)
                     else:
-                        pygame.draw.rect(screen, plat.color, rect)
+                        plat = get_platform(pid)
+                        if plat.sprite:
+                            screen.blit(plat.sprite, rect)
+                        else:
+                            pygame.draw.rect(screen, plat.color, rect)
 
         # Draw UI
         pygame.draw.rect(screen, UI_BG, (0, 0, SCREEN_WIDTH, CATEGORY_BAR_HEIGHT))
@@ -394,9 +433,13 @@ def main():
             pygame.draw.rect(screen, TEXT_COLOR, input_checkpoint_rect, 2)
             txt_checkpoint_surf = ui_font.render(text_checkpoint, True, TEXT_COLOR)
             screen.blit(txt_checkpoint_surf, (input_checkpoint_rect.x + 5, input_checkpoint_rect.y + 5))
-            
-            mode_indicator = ui_font.render("MODIFY MODE (Mid-Click Obelisk | M to Exit)", True, (0, 255, 100))
-            screen.blit(mode_indicator, (500, 12))
+
+            lbl_text = ui_font.render("Text:", True, TEXT_COLOR)
+            screen.blit(lbl_text, (445, 12))
+            pygame.draw.rect(screen, INPUT_ACTIVE if active_text else INPUT_INACTIVE, input_text_rect)
+            pygame.draw.rect(screen, TEXT_COLOR, input_text_rect, 2)
+            txt_value_surf = ui_font.render(text_value, True, TEXT_COLOR)
+            screen.blit(txt_value_surf, (input_text_rect.x + 5, input_text_rect.y + 5))
         else:
             info_text = ui_font.render("WASD/Arrows: Move | L-Click: Place | R-Click: Erase | Ctrl+S: Save | M: Modify", True, (150, 150, 150))
             screen.blit(info_text, (350, 12))

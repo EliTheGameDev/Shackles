@@ -10,8 +10,8 @@
         "lives": 3
     },
     "sword_data": {
-        "blade": "Blade - Old",
         "handle": "Handle - Old",
+        "blade": "Blade - Old",
         "foreblade": "Foreblade - Old",
         "sheath": "Sheath - Old"
     }
